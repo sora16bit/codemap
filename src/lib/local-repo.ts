@@ -11,9 +11,9 @@
 //   → 大学 Wi-Fi 等、同一ネットワークの他人からこの窓口に触れられないようにするため。
 // あくまで「自分の手元で動かす開発者向け」機能。デプロイ先では使えない。
 
-import { readdir, readFile, stat } from "node:fs/promises";
+import { readdir, readFile, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { basename, join, relative, resolve, sep } from "node:path";
+import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { SOURCE_EXT, parseGoModule } from "./languages";
 import { IGNORE_DIR, type FetchedRepo, type RepoFile } from "./github";
 
@@ -27,11 +27,33 @@ function allowedRoot(): string {
   return resolve(homedir());
 }
 
-/** target が許可ルート（ホーム）配下に収まっているか。.. での脱出を弾く。 */
+/**
+ * target が許可ルート（ホーム）配下に収まっているか。.. での脱出を弾く。
+ * relative() が ".." で始まる（=ルートの外）か、絶対パスを返す（=別ドライブ等で
+ * ルートと無関係）場合は配下でない。空文字はルート自身＝許可。
+ */
 function isWithinAllowedRoot(target: string): boolean {
   const rel = relative(allowedRoot(), resolve(target));
-  // rel が空文字（=ホーム自身）か、".." で始まらず絶対パスでもなければ配下。
-  return rel === "" || (!rel.startsWith("..") && !resolve(target).startsWith(".."));
+  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+}
+
+/**
+ * シンボリックリンクを実体に解決した上で、ホーム配下かつ非機密かを確認する。
+ * これを通った実パスだけ読んでよい。symlink でホーム外（/etc 等）を指していても
+ * realpath で実体を見るので回避できない。存在しなければ null。
+ */
+async function safeRealPath(target: string): Promise<string | null> {
+  // まず文字列ベースで明らかな外/機密を弾く（realpath 前の早期拒否）。
+  if (!isWithinAllowedRoot(target) || pathHasSecretDir(target)) return null;
+  let real: string;
+  try {
+    real = await realpath(target);
+  } catch {
+    return null; // 存在しない等
+  }
+  // 実体（symlink 解決後）も改めてホーム配下・非機密であることを要求する。
+  if (!isWithinAllowedRoot(real) || pathHasSecretDir(real)) return null;
+  return real;
 }
 
 // ホーム配下でも触らせない機密ディレクトリ/ファイル名。秘密鍵・認証情報・環境変数など。
@@ -78,13 +100,17 @@ export async function readLocalRepo(dirInput?: string): Promise<FetchedRepo> {
   // dirInput が絶対パスならそのまま、相対なら cwd 起点で解決。省略時は cwd。
   const target = dirInput ? resolve(process.cwd(), dirInput) : process.cwd();
 
-  // ホーム配下に閉じ込める（パストラバーサル防止）。外は読ませない。
-  if (!isWithinAllowedRoot(target)) {
-    throw new Error("ホームディレクトリの外は解析できません");
-  }
-  // 機密ディレクトリ自体を解析対象に指定された場合も拒否。
-  if (pathHasSecretDir(target)) {
-    throw new Error("機密ディレクトリは解析できません");
+  // ルート検証：symlink 実体まで解決した上でホーム配下・非機密かを確認する。
+  const realTarget = await safeRealPath(target);
+  if (!realTarget) {
+    // 何が原因か（外 or 機密 or 不在）を区別してメッセージを出す。
+    if (!isWithinAllowedRoot(target)) {
+      throw new Error("ホームディレクトリの外は解析できません");
+    }
+    if (pathHasSecretDir(target)) {
+      throw new Error("機密ディレクトリは解析できません");
+    }
+    throw new Error("指定したディレクトリが見つかりません");
   }
 
   const files: RepoFile[] = [];
@@ -94,11 +120,13 @@ export async function readLocalRepo(dirInput?: string): Promise<FetchedRepo> {
     const entries = await readdir(dir, { withFileTypes: true });
     for (const entry of entries) {
       const abs = join(dir, entry.name);
-      const relPath = relative(target, abs).split(sep).join("/");
+      const relPath = relative(realTarget!, abs).split(sep).join("/");
 
       if (IGNORE_DIR.test(relPath + "/")) continue;
       // 機密ディレクトリ（.ssh 等）配下は丸ごとスキップ。
       if (SECRET_NAMES.has(entry.name)) continue;
+      // シンボリックリンクは辿らない（ホーム外/機密を指すリンクでの脱出を防ぐ）。
+      if (entry.isSymbolicLink()) continue;
 
       if (entry.isDirectory()) {
         await walk(abs);
@@ -117,11 +145,11 @@ export async function readLocalRepo(dirInput?: string): Promise<FetchedRepo> {
     }
   }
 
-  await walk(target);
+  await walk(realTarget);
 
-  // 表示名はホームからの相対パス（owner/repo の代わり）。
+  // 表示名はホームからの相対パス（owner/repo の代わり）。realTarget 基準で出す。
   const name =
-    relative(allowedRoot(), target) || basename(target) || "local";
+    relative(allowedRoot(), realTarget) || basename(realTarget) || "local";
   return {
     repo: `local:${name}`,
     files,
@@ -154,15 +182,16 @@ export async function readLocalFile(
   ];
 
   for (const target of candidates) {
-    // 多層チェック：ホーム配下か／機密ディレクトリでないか／機密ファイル名でないか。
-    if (!isWithinAllowedRoot(target)) continue;
-    if (pathHasSecretDir(target)) continue;
-    if (isSecretFile(basename(target))) continue;
+    // symlink 実体まで解決し、ホーム配下・非機密を確認した実パスだけ採用する。
+    const real = await safeRealPath(target);
+    if (!real) continue;
+    // 実パスのファイル名でも機密判定（リンク先が id_rsa 等でないか）。
+    if (isSecretFile(basename(real))) continue;
 
-    const info = await stat(target).catch(() => null);
+    const info = await stat(real).catch(() => null);
     if (info?.isFile()) {
       const MAX = 200_000; // 約200KB。/api/file の GitHub 経路と揃える。
-      const text = await readFile(target, "utf8");
+      const text = await readFile(real, "utf8");
       const truncated = text.length > MAX;
       return { content: truncated ? text.slice(0, MAX) : text, truncated };
     }

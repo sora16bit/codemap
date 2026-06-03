@@ -3,7 +3,7 @@
 // 「クリックしたファイルだけ」をその場で取りに行く軽量エンドポイント。
 // repo が "local:..." のときはローカル fs から読む（開発時のドッグフーディング用）。
 
-import { readLocalFile } from "@/lib/local-repo";
+import { readLocalFile, isLocalAnalysisEnabled } from "@/lib/local-repo";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,6 +22,13 @@ export async function GET(request: Request) {
   // ローカル解析（local:<name>）のファイルはローカル fs から読む。
   // GitHub raw には存在しないので owner/repo 経路には乗せられない。
   if (repo.startsWith("local:")) {
+    // 多層防御：readLocalFile 内部でも弾くが、入口でも本番(production)を 403 で止める。
+    if (!isLocalAnalysisEnabled()) {
+      return Response.json(
+        { error: "ローカル解析は開発時のみ利用できます" },
+        { status: 403 },
+      );
+    }
     try {
       const { content, truncated } = await readLocalFile(
         repo.slice("local:".length),
