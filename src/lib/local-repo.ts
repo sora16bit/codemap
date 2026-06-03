@@ -12,6 +12,7 @@
 // あくまで「自分の手元で動かす開発者向け」機能。デプロイ先では使えない。
 
 import { readdir, readFile, realpath, stat } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative, resolve, sep } from "node:path";
 import { SOURCE_EXT, parseGoModule } from "./languages";
@@ -22,19 +23,64 @@ export function isLocalAnalysisEnabled(): boolean {
   return process.env.NODE_ENV !== "production";
 }
 
-/** 解析を許可するルート＝ユーザーのホームディレクトリ。ここより外は読ませない。 */
-function allowedRoot(): string {
-  return resolve(homedir());
+/**
+ * Windows 形式のパスを WSL 形式に正規化する。
+ *  - `C:\Users\me\foo` / `C:/Users/me/foo` → `/mnt/c/Users/me/foo`
+ *  - バックスラッシュはスラッシュへ、ドライブ文字は小文字へ。
+ * Windows 形式でなければそのまま返す。エクスプローラーの「パスのコピー」を
+ * そのまま貼れるようにするための入口変換（セキュリティ判定は変換後に効く）。
+ */
+function normalizeWindowsPath(p: string): string {
+  // 先頭が「英字 + :」ならドライブ指定の Windows パス。
+  const m = p.match(/^([A-Za-z]):[\\/](.*)$/);
+  if (m) {
+    const drive = m[1].toLowerCase();
+    const rest = m[2].replace(/\\/g, "/");
+    return `/mnt/${drive}/${rest}`;
+  }
+  // ドライブ無しでもバックスラッシュ区切りなら / に統一しておく。
+  return p.includes("\\") ? p.replace(/\\/g, "/") : p;
 }
 
 /**
- * target が許可ルート（ホーム）配下に収まっているか。.. での脱出を弾く。
- * relative() が ".." で始まる（=ルートの外）か、絶対パスを返す（=別ドライブ等で
- * ルートと無関係）場合は配下でない。空文字はルート自身＝許可。
+ * 解析を許可するルート群。ここより外は読ませない。
+ *  - WSL のホーム（/home/<user>）
+ *  - Windows のユーザーフォルダ（/mnt/c/Users/<user>）※WSL から Windows 側の
+ *    プロジェクトを解析するため。存在する場合だけ追加する（純 Linux 環境では無い）。
+ * /mnt/c/Windows 等のシステム領域は含めない（ユーザー領域だけ許可）。
+ */
+function allowedRoots(): string[] {
+  const roots = [resolve(homedir())];
+  // WSL: Windows のユーザーフォルダ。USER 環境変数のユーザー名で組み立てる。
+  const winUser = process.env.USER || process.env.USERNAME;
+  if (winUser) {
+    const winHome = `/mnt/c/Users/${winUser}`;
+    if (existsSync(winHome)) roots.push(resolve(winHome));
+  }
+  return roots;
+}
+
+/**
+ * target がいずれかの許可ルート配下に収まっているか。.. での脱出を弾く。
+ * relative() が ".." で始まる（=ルートの外）か絶対パスを返す（=別ツリーで無関係）
+ * 場合は配下でない。空文字はルート自身＝許可。1つでも配下なら true。
  */
 function isWithinAllowedRoot(target: string): boolean {
-  const rel = relative(allowedRoot(), resolve(target));
-  return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+  const abs = resolve(target);
+  return allowedRoots().some((root) => {
+    const rel = relative(root, abs);
+    return rel === "" || (!rel.startsWith("..") && !isAbsolute(rel));
+  });
+}
+
+/** target が属する許可ルートを返す（複数候補のうち配下に含むもの）。無ければ null。 */
+function owningRoot(target: string): string | null {
+  const abs = resolve(target);
+  for (const root of allowedRoots()) {
+    const rel = relative(root, abs);
+    if (rel === "" || (!rel.startsWith("..") && !isAbsolute(rel))) return root;
+  }
+  return null;
 }
 
 /**
@@ -75,10 +121,15 @@ const SECRET_NAMES = new Set([
 const SECRET_FILE_RE =
   /(^\.env(\..+)?$|^\.netrc$|^id_(rsa|ed25519|ecdsa|dsa)$|\.pem$|\.key$|\.pfx$|\.p12$|credentials|secret)/i;
 
-/** パス要素のどこかに機密ディレクトリ名が含まれるか。 */
+/**
+ * パス要素のどこかに機密ディレクトリ名が含まれるか（許可ルートからの相対で判定）。
+ * 許可ルート外なら判定不能＝安全側で機密扱い（true）にして弾く。
+ */
 function pathHasSecretDir(absPath: string): boolean {
-  const fromHome = relative(allowedRoot(), absPath);
-  return fromHome.split(sep).some((seg) => SECRET_NAMES.has(seg));
+  const root = owningRoot(absPath);
+  if (!root) return true;
+  const fromRoot = relative(root, resolve(absPath));
+  return fromRoot.split(sep).some((seg) => SECRET_NAMES.has(seg));
 }
 
 /** このファイル名は機密として除外すべきか。 */
@@ -97,15 +148,20 @@ export async function readLocalRepo(dirInput?: string): Promise<FetchedRepo> {
     throw new Error("ローカル解析は開発時のみ利用できます");
   }
 
-  // dirInput が絶対パスならそのまま、相対なら cwd 起点で解決。省略時は cwd。
-  const target = dirInput ? resolve(process.cwd(), dirInput) : process.cwd();
+  // 入力を正規化（Windows 形式 C:\... を /mnt/c/... に）。省略時は cwd。
+  // 絶対パスならそのまま、相対なら cwd 起点で解決。
+  const target = dirInput
+    ? resolve(process.cwd(), normalizeWindowsPath(dirInput))
+    : process.cwd();
 
   // ルート検証：symlink 実体まで解決した上でホーム配下・非機密かを確認する。
   const realTarget = await safeRealPath(target);
   if (!realTarget) {
     // 何が原因か（外 or 機密 or 不在）を区別してメッセージを出す。
     if (!isWithinAllowedRoot(target)) {
-      throw new Error("ホームディレクトリの外は解析できません");
+      throw new Error(
+        "解析できるのはホーム（WSL）か Windows のユーザーフォルダ配下だけです",
+      );
     }
     if (pathHasSecretDir(target)) {
       throw new Error("機密ディレクトリは解析できません");
@@ -147,9 +203,10 @@ export async function readLocalRepo(dirInput?: string): Promise<FetchedRepo> {
 
   await walk(realTarget);
 
-  // 表示名はホームからの相対パス（owner/repo の代わり）。realTarget 基準で出す。
+  // 表示名は所属ルートからの相対パス（owner/repo の代わり）。realTarget 基準で出す。
+  const nameRoot = owningRoot(realTarget) ?? realTarget;
   const name =
-    relative(allowedRoot(), realTarget) || basename(realTarget) || "local";
+    relative(nameRoot, realTarget) || basename(realTarget) || "local";
   return {
     repo: `local:${name}`,
     files,
@@ -173,12 +230,17 @@ export async function readLocalFile(
     throw new Error("ローカル解析は開発時のみ利用できます");
   }
 
-  // 候補：ホーム/name/filePath（本筋）、ホーム/filePath、cwd/filePath（後方互換）。
-  const home = allowedRoot();
+  // Windows 形式が混ざっても扱えるよう正規化してから候補を組む。
+  const nName = normalizeWindowsPath(name);
+  const nFile = normalizeWindowsPath(filePath);
+  // name はどの許可ルートからの相対か不定（WSL ホーム or Windows ユーザーフォルダ）。
+  // 各ルートについて root/name/filePath と root/filePath を候補にし、cwd も後方互換で足す。
   const candidates = [
-    resolve(home, name, filePath),
-    resolve(home, filePath),
-    resolve(process.cwd(), filePath),
+    ...allowedRoots().flatMap((root) => [
+      resolve(root, nName, nFile),
+      resolve(root, nFile),
+    ]),
+    resolve(process.cwd(), nFile),
   ];
 
   for (const target of candidates) {
