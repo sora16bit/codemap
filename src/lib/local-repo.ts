@@ -31,6 +31,8 @@ export function isLocalAnalysisEnabled(): boolean {
  * そのまま貼れるようにするための入口変換（セキュリティ判定は変換後に効く）。
  */
 function normalizeWindowsPath(p: string): string {
+  // 前後の空白と引用符を剥がす（エクスプローラーの「パスのコピー」は "..." 付き）。
+  p = p.trim().replace(/^["']|["']$/g, "").trim();
   // 先頭が「英字 + :」ならドライブ指定の Windows パス。
   const m = p.match(/^([A-Za-z]):[\\/](.*)$/);
   if (m) {
