@@ -10,6 +10,23 @@ import { SOURCE_EXT, parseGoModule } from "./languages";
 export const IGNORE_DIR =
   /(^|\/)(node_modules|\.next|\.git|dist|build|out|coverage|\.vercel)(\/|$)/;
 
+// 公開デモの乱用対策（上限）。巨大モノレポを投げられてもサーバーを潰させない。
+// 超えたら途中で打ち切って「大きすぎる」と返す（無防備に全部読み込まない）。
+const MAX_FILES = 1500; // 解析対象ファイル数
+const MAX_TOTAL_BYTES = 30 * 1024 * 1024; // 総バイト数 30MB
+const MAX_FILE_BYTES = 1024 * 1024; // 1ファイル 1MB（local-repo.ts と揃える）
+
+/** リポが大きすぎて解析を打ち切ったときの目印エラー。 */
+export class RepoTooLargeError extends Error {
+  constructor() {
+    super(
+      "リポジトリが大きすぎて解析できません（ファイル数・サイズの上限超過）。" +
+        "小さめのリポジトリでお試しください。",
+    );
+    this.name = "RepoTooLargeError";
+  }
+}
+
 export interface RepoFile {
   /** リポジトリルートからの相対パス */
   path: string;
@@ -85,10 +102,22 @@ async function extractSourceFiles(
 ): Promise<{ files: RepoFile[]; goModContent: string | null }> {
   const files: RepoFile[] = [];
   let goModContent: string | null = null;
+  let totalBytes = 0; // 採用したファイルの累計バイト数（上限監視用）
+  // 上限超過の記録。ストリームは destroy せず最後まで流し切り（finish を確実に発火させる）、
+  // 採用だけ止める。destroy で途中破壊すると tar-stream が error でなく close だけ出し、
+  // 待ち受け Promise が宙吊りになってハングする（実測で確認済み）。
+  let aborted = false;
   const gunzip = createGunzip();
   const extractor = extract();
 
   extractor.on("entry", (header, stream, next) => {
+    // 既に上限超過なら、以降のエントリは中身を読まず捨てて流し切る。
+    if (aborted) {
+      stream.resume();
+      stream.on("end", next);
+      return;
+    }
+
     // tarball の中身は「repo-HEAD/...」という接頭辞が付くので剥がす
     const rel = header.name.replace(/^[^/]+\//, "");
 
@@ -105,14 +134,44 @@ async function extractSourceFiles(
       return;
     }
 
+    // ファイル数が上限を超えたら以降は採用しない（巨大モノレポ対策）。
+    if (files.length >= MAX_FILES) {
+      aborted = true;
+      stream.resume();
+      stream.on("end", next);
+      return;
+    }
+
     const chunks: Buffer[] = [];
-    stream.on("data", (c: Buffer) => chunks.push(c));
+    let fileBytes = 0;
+    let tooBig = false;
+    stream.on("data", (c: Buffer) => {
+      fileBytes += c.length;
+      // 1ファイルが大きすぎる場合はそのファイルだけ読み捨てる（minified 等）。
+      if (fileBytes > MAX_FILE_BYTES) {
+        tooBig = true;
+        chunks.length = 0;
+        stream.resume();
+        return;
+      }
+      chunks.push(c);
+    });
     stream.on("end", () => {
+      if (tooBig) {
+        next(); // 1MB 超の単一ファイルはスキップして続行
+        return;
+      }
       const text = Buffer.concat(chunks).toString("utf8");
       if (isRootGoMod) {
         goModContent = text; // ノードにはせず module 解決にだけ使う
       } else {
-        files.push({ path: rel, content: text });
+        totalBytes += fileBytes;
+        // 総バイト数が上限を超えたら以降は採用しない（メモリ枯渇対策）。
+        if (totalBytes > MAX_TOTAL_BYTES) {
+          aborted = true;
+        } else {
+          files.push({ path: rel, content: text });
+        }
       }
       next();
     });
@@ -129,6 +188,11 @@ async function extractSourceFiles(
     nodeStream.on("error", reject);
     nodeStream.pipe(gunzip).pipe(extractor);
   });
+
+  // 上限超過していたら、ここで明示的に打ち切りエラーを投げる。
+  if (aborted) {
+    throw new RepoTooLargeError();
+  }
 
   return { files, goModContent };
 }
