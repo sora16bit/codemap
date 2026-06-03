@@ -24,6 +24,8 @@ export default function Home() {
   const [codeLoading, setCodeLoading] = useState(false);
   // コードを全画面オーバーレイで開いているか。
   const [codeOpen, setCodeOpen] = useState(false);
+  // 開発時のみ：解析したい手元プロジェクトのパス（ホーム配下・空ならこのプロジェクト自身）。
+  const [localDir, setLocalDir] = useState("");
 
   async function analyze(e: React.FormEvent) {
     e.preventDefault();
@@ -48,16 +50,20 @@ export default function Home() {
     }
   }
 
-  // 開発時のみ：手元のこのプロジェクト自身を解析（未公開でもドッグフーディングできる）。
+  // 開発時のみ：手元のプロジェクトを解析（未公開でもドッグフーディングできる）。
+  // dir 省略＝このプロジェクト自身。指定＝ホーム配下の他プロジェクト（絶対パス可）。
   const isDev = process.env.NODE_ENV !== "production";
-  async function analyzeLocal() {
+  async function analyzeLocal(dir?: string) {
     if (loading) return;
     setLoading(true);
     setError(null);
     setGraph(null);
     setSelected(null);
     try {
-      const res = await fetch("/api/analyze-local");
+      const url = dir
+        ? `/api/analyze-local?dir=${encodeURIComponent(dir)}`
+        : "/api/analyze-local";
+      const res = await fetch(url);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "解析に失敗しました");
       setGraph(data as RepoGraph);
@@ -142,14 +148,26 @@ export default function Home() {
           </button>
         </form>
         {isDev && (
-          // 開発時だけ出る。手元のプロジェクト自身を解析（ドッグフーディング用）。
-          <button
-            onClick={analyzeLocal}
-            disabled={loading}
-            className="mt-2 text-xs text-zinc-500 underline-offset-2 transition-colors hover:text-zinc-900 hover:underline disabled:opacity-40 dark:hover:text-zinc-100"
-          >
-            {t(lang, "btn.analyzeLocal")}
-          </button>
+          // 開発時だけ出る。手元のプロジェクトを解析（ドッグフーディング用）。
+          // パス欄が空ならこのプロジェクト自身、入力すればホーム配下の他プロジェクト。
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <button
+              onClick={() => analyzeLocal(localDir.trim() || undefined)}
+              disabled={loading}
+              className="text-xs text-zinc-500 underline-offset-2 transition-colors hover:text-zinc-900 hover:underline disabled:opacity-40 dark:hover:text-zinc-100"
+            >
+              {t(lang, "btn.analyzeLocal")}
+            </button>
+            <input
+              value={localDir}
+              onChange={(e) => setLocalDir(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") analyzeLocal(localDir.trim() || undefined);
+              }}
+              placeholder={t(lang, "ph.localDir")}
+              className="min-w-0 flex-1 rounded border border-zinc-200 bg-transparent px-2 py-1 font-mono text-xs text-zinc-700 placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none dark:border-zinc-800 dark:text-zinc-300"
+            />
+          </div>
         )}
         {error && <p className="mt-2 text-sm text-red-600 dark:text-red-400">{error}</p>}
       </header>
