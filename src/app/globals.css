@@ -1,0 +1,42 @@
+@import "tailwindcss";
+
+:root {
+  --background: #ffffff;
+  --foreground: #171717;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #0a0a0a;
+    --foreground: #ededed;
+  }
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* CodeMap は「読む地図」であって編集ツールではない。React Flow が各ノードに描く
+   接続ハンドル（黒い点）は手動でエッジを繋ぐためのもので、ここでは不要なので隠す。
+   nodesConnectable=false だけでは DOM 上のポチが残るため CSS で確実に消す。 */
+.react-flow__handle {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
+/* 線（エッジ）を操作対象から完全に外す。React Flow はエッジに透明な太い当たり判定
+   レイヤー(.react-flow__edge-interaction)を別途描くため、ノード間を埋める線を
+   掴んでしまい背景ドラッグ（地図のパン）ができなくなる。線は見るだけなので、
+   エッジ全体の pointer-events を切って線を素通り＝背景を掴めるようにする。 */
+.react-flow__edge {
+  pointer-events: none !important;
+}
