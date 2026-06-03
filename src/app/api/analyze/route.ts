@@ -25,7 +25,12 @@ export async function POST(request: Request) {
   try {
     const { owner, repo } = parseRepoInput(input);
     const fetched = await fetchRepoFiles(owner, repo);
-    const graph = analyzeRepo(fetched.repo, fetched.files, fetched.goModule);
+    const graph = analyzeRepo(
+      fetched.repo,
+      fetched.files,
+      fetched.goModule,
+      fetched.tsconfig,
+    );
     return Response.json(graph);
   } catch (err) {
     // 大きすぎて打ち切った場合は 413 で返す（クライアントが理由を区別できる）。

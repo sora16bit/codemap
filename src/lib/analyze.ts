@@ -1,4 +1,4 @@
-import { Project, SourceFile } from "ts-morph";
+import { Project, SourceFile, ts } from "ts-morph";
 import type { RepoFile } from "./github";
 import type { RepoGraph, FileNode, DependencyEdge } from "./types";
 import {
@@ -30,6 +30,7 @@ export function analyzeRepo(
   repo: string,
   files: RepoFile[],
   goModule: string | null = null,
+  tsconfigContent: string | null = null,
 ): RepoGraph {
   const pathSet = new Set(files.map((f) => f.path));
   const edgeSet = new Set<string>(); // "from\tto" で重複排除
@@ -51,6 +52,12 @@ export function analyzeRepo(
 
   // JS/TS: ts-morph で正確に AST 解析。
   if (jsFiles.length > 0) {
+    // tsconfig の paths エイリアス（@/* → src/* 等）を読む。
+    // モダンな TS/Next.js は相対 import でなくエイリアスで繋ぐので、
+    // これを解決しないと依存エッジが張れず「全部末端」に見える。
+    // tsconfig は SOURCE_EXT に含まれずファイル一覧に来ないので、取得側から別途渡す。
+    const aliases = parseTsconfigAliases(tsconfigContent);
+
     const project = new Project({
       useInMemoryFileSystem: true,
       compilerOptions: { allowJs: true },
@@ -62,10 +69,19 @@ export function analyzeRepo(
     for (const sf of project.getSourceFiles()) {
       const fromPath = sf.getFilePath().replace(/^\//, "");
       for (const spec of getImportSpecifiers(sf)) {
-        // 相対 import のみ解決対象（外部パッケージはグラフに出さない）
-        if (!spec.startsWith(".")) continue;
-        const resolved = resolveRelative(fromPath, spec, pathSet);
-        if (resolved) addEdge(fromPath, resolved);
+        if (spec.startsWith(".")) {
+          // 相対 import
+          const resolved = resolveRelative(fromPath, spec, pathSet);
+          if (resolved) addEdge(fromPath, resolved);
+        } else {
+          // エイリアス（@/lib/foo 等）をリポ内パスに展開して解決を試みる。
+          // マッチしなければ外部パッケージ＝グラフに出さない。
+          const expanded = expandAlias(spec, aliases);
+          if (expanded) {
+            const resolved = resolveBare(expanded, pathSet);
+            if (resolved) addEdge(fromPath, resolved);
+          }
+        }
       }
     }
   }
@@ -143,6 +159,79 @@ function resolveRelative(
     if (pathSet.has(stripped)) return stripped;
     for (const ext of RESOLVE_EXT) {
       if (pathSet.has(stripped + ext)) return stripped + ext;
+    }
+  }
+  return null;
+}
+
+/**
+ * 既にリポルート相対のパス（エイリアス展開後）を、拡張子・index 補完で解決する。
+ * 例: "src/lib/posts" → "src/lib/posts.ts"。
+ */
+function resolveBare(repoRelPath: string, pathSet: Set<string>): string | null {
+  const joined = normalizePath(repoRelPath);
+  if (pathSet.has(joined)) return joined;
+  for (const ext of RESOLVE_EXT) {
+    if (pathSet.has(joined + ext)) return joined + ext;
+  }
+  const stripped = joined.replace(/\.(js|jsx|mjs|cjs)$/, "");
+  if (stripped !== joined) {
+    if (pathSet.has(stripped)) return stripped;
+    for (const ext of RESOLVE_EXT) {
+      if (pathSet.has(stripped + ext)) return stripped + ext;
+    }
+  }
+  return null;
+}
+
+/**
+ * tsconfig.json の中身（文字列）の compilerOptions.paths からエイリアス表を作る。
+ * 例: { "@/*": ["./src/*"] } → [{ prefix: "@/", target: "src/" }]。
+ * 末尾 /* のワイルドカード形式のみ対応（最頻出。完璧は狙わない方針）。
+ * tsconfig が無い/壊れている場合は空配列（＝従来通り相対のみ）。
+ *
+ * パースは TypeScript 公式の parseConfigFileTextToJson を使う。tsconfig は JSONC
+ * （コメント・末尾カンマ）かつ paths 値に // や /* を含む（"@/*": ["./src/*"]）ため、
+ * 自前の正規表現パーサだと文字列内の /* を誤ってコメント除去して壊す（実測で確認済み）。
+ */
+function parseTsconfigAliases(
+  tsconfigContent: string | null,
+): { prefix: string; target: string }[] {
+  if (!tsconfigContent) return [];
+
+  const parsed = ts.parseConfigFileTextToJson("tsconfig.json", tsconfigContent);
+  if (parsed.error) return [];
+  const paths = parsed.config?.compilerOptions?.paths as
+    | Record<string, string[]>
+    | undefined;
+  if (!paths) return [];
+
+  const out: { prefix: string; target: string }[] = [];
+  for (const [key, vals] of Object.entries(paths)) {
+    if (!key.endsWith("/*") || !Array.isArray(vals) || vals.length === 0) continue;
+    const target = vals[0];
+    if (typeof target !== "string" || !target.endsWith("/*")) continue;
+    out.push({
+      prefix: key.slice(0, -1), // "@/*" → "@/"
+      // "./src/*" → "src/"。先頭 ./ は剥がす。
+      target: target.slice(0, -1).replace(/^\.\//, ""),
+    });
+  }
+  return out;
+}
+
+/**
+ * import 指定子がエイリアスにマッチすれば、リポ相対パスに展開して返す。
+ * 例: spec="@/lib/posts", alias={prefix:"@/", target:"src/"} → "src/lib/posts"。
+ * マッチしなければ null（＝外部パッケージ）。
+ */
+function expandAlias(
+  spec: string,
+  aliases: { prefix: string; target: string }[],
+): string | null {
+  for (const { prefix, target } of aliases) {
+    if (spec.startsWith(prefix)) {
+      return target + spec.slice(prefix.length);
     }
   }
   return null;

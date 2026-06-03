@@ -20,7 +20,12 @@ export async function GET(request: Request) {
 
   try {
     const fetched = await readLocalRepo(dir);
-    const graph = analyzeRepo(fetched.repo, fetched.files, fetched.goModule);
+    const graph = analyzeRepo(
+      fetched.repo,
+      fetched.files,
+      fetched.goModule,
+      fetched.tsconfig,
+    );
     return Response.json(graph);
   } catch (err) {
     const message =

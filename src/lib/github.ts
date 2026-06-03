@@ -38,6 +38,9 @@ export interface FetchedRepo {
   files: RepoFile[];
   /** Go の module パス（go.mod の module 行）。Go 依存解決に使う。無ければ null。 */
   goModule: string | null;
+  /** ルート tsconfig.json の中身。paths エイリアス（@/* 等）解決に使う。無ければ null。
+   *  SOURCE_EXT に含まれずノードにはしないが、解析のガードレールとして運ぶ（goModule と同じ扱い）。 */
+  tsconfig: string | null;
 }
 
 /** GitHub の URL や owner/repo 文字列から owner と repo を取り出す。 */
@@ -85,11 +88,14 @@ export async function fetchRepoFiles(
     throw new Error("レスポンスが空でした");
   }
 
-  const { files, goModContent } = await extractSourceFiles(res.body);
+  const { files, goModContent, tsconfigContent } = await extractSourceFiles(
+    res.body,
+  );
   return {
     repo: `${owner}/${repo}`,
     files,
     goModule: goModContent ? parseGoModule(goModContent) : null,
+    tsconfig: tsconfigContent,
   };
 }
 
@@ -99,9 +105,14 @@ export async function fetchRepoFiles(
  */
 async function extractSourceFiles(
   body: ReadableStream<Uint8Array>,
-): Promise<{ files: RepoFile[]; goModContent: string | null }> {
+): Promise<{
+  files: RepoFile[];
+  goModContent: string | null;
+  tsconfigContent: string | null;
+}> {
   const files: RepoFile[] = [];
   let goModContent: string | null = null;
+  let tsconfigContent: string | null = null;
   let totalBytes = 0; // 採用したファイルの累計バイト数（上限監視用）
   // 上限超過の記録。ストリームは destroy せず最後まで流し切り（finish を確実に発火させる）、
   // 採用だけ止める。destroy で途中破壊すると tar-stream が error でなく close だけ出し、
@@ -121,12 +132,13 @@ async function extractSourceFiles(
     // tarball の中身は「repo-HEAD/...」という接頭辞が付くので剥がす
     const rel = header.name.replace(/^[^/]+\//, "");
 
-    // go.mod はリポルートのものだけ拾う（依存グラフのノードにはしない）。
+    // go.mod / tsconfig.json はリポルートのものだけ拾う（ノードにはしない）。
     const isRootGoMod = rel === "go.mod";
+    const isRootTsconfig = rel === "tsconfig.json";
     const skip =
       header.type !== "file" ||
       IGNORE_DIR.test(rel) ||
-      (!SOURCE_EXT.test(rel) && !isRootGoMod);
+      (!SOURCE_EXT.test(rel) && !isRootGoMod && !isRootTsconfig);
 
     if (skip) {
       stream.resume(); // 読み捨て
@@ -164,6 +176,8 @@ async function extractSourceFiles(
       const text = Buffer.concat(chunks).toString("utf8");
       if (isRootGoMod) {
         goModContent = text; // ノードにはせず module 解決にだけ使う
+      } else if (isRootTsconfig) {
+        tsconfigContent = text; // ノードにはせず paths エイリアス解決に使う
       } else {
         totalBytes += fileBytes;
         // 総バイト数が上限を超えたら以降は採用しない（メモリ枯渇対策）。
@@ -194,5 +208,5 @@ async function extractSourceFiles(
     throw new RepoTooLargeError();
   }
 
-  return { files, goModContent };
+  return { files, goModContent, tsconfigContent };
 }

@@ -173,6 +173,7 @@ export async function readLocalRepo(dirInput?: string): Promise<FetchedRepo> {
 
   const files: RepoFile[] = [];
   let goModContent: string | null = null;
+  let tsconfigContent: string | null = null;
 
   async function walk(dir: string): Promise<void> {
     const entries = await readdir(dir, { withFileTypes: true });
@@ -193,6 +194,8 @@ export async function readLocalRepo(dirInput?: string): Promise<FetchedRepo> {
         if (isSecretFile(entry.name)) continue;
         if (relPath === "go.mod") {
           goModContent = await readFile(abs, "utf8");
+        } else if (relPath === "tsconfig.json") {
+          tsconfigContent = await readFile(abs, "utf8"); // paths エイリアス解決用
         } else if (SOURCE_EXT.test(relPath)) {
           // 巨大ファイルは読み飛ばす（メモリ保護）。
           const info = await stat(abs);
@@ -213,6 +216,7 @@ export async function readLocalRepo(dirInput?: string): Promise<FetchedRepo> {
     repo: `local:${name}`,
     files,
     goModule: goModContent ? parseGoModule(goModContent) : null,
+    tsconfig: tsconfigContent,
   };
 }
 
