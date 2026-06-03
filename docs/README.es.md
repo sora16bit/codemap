@@ -4,7 +4,7 @@
 
 ### Lánzale un repo de GitHub. Obtén un mapa de *cómo* leerlo.
 
-Una herramienta gratuita y sin IA que convierte cualquier repositorio público en un mapa de dependencias — y te dice **por dónde empezar a leer**.
+Convierte cualquier repositorio público en un mapa de dependencias — y te dice **por dónde empezar a leer**. El mapa se construye mecánicamente: gratis, rápido, sin clave de API.
 
 **[▶ Pruébalo en vivo en codemap.sora16bit.com](https://codemap.sora16bit.com)**
 

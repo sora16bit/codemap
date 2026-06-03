@@ -4,7 +4,7 @@
 
 ### Donnez-lui un dépôt GitHub. Obtenez une carte de *comment* le lire.
 
-Un outil gratuit et sans IA qui transforme n'importe quel dépôt public en carte de dépendances — et vous dit **par où commencer à lire**.
+Transforme n'importe quel dépôt public en carte de dépendances — et vous dit **par où commencer à lire**. La carte est construite mécaniquement : gratuite, rapide, sans clé d'API.
 
 **[▶ Essayez-le en ligne sur codemap.sora16bit.com](https://codemap.sora16bit.com)**
 

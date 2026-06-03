@@ -4,7 +4,7 @@
 
 ### Wirf ihm ein GitHub-Repo zu. Erhalte eine Karte, *wie* man es liest.
 
-Ein kostenloses Tool ohne KI, das jedes öffentliche Repository in eine Abhängigkeitskarte verwandelt — und dir sagt, **wo du mit dem Lesen anfangen sollst**.
+Verwandelt jedes öffentliche Repository in eine Abhängigkeitskarte — und sagt dir, **wo du mit dem Lesen anfangen sollst**. Die Karte wird mechanisch erzeugt: kostenlos, schnell, ohne API-Schlüssel.
 
 **[▶ Jetzt live testen auf codemap.sora16bit.com](https://codemap.sora16bit.com)**
 

@@ -4,7 +4,7 @@
 
 ### Throw a GitHub repo at it. Get a map of how to *read* it.
 
-A free, no-AI tool that turns any public repository into a dependency map — and tells you **where to start reading**.
+Turns any public repository into a dependency map — and tells you **where to start reading**. The map is built mechanically: free, fast, no API key.
 
 **[▶ Try it live at codemap.sora16bit.com](https://codemap.sora16bit.com)**
 
