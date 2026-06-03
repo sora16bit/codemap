@@ -6,6 +6,9 @@
 
 一个免费、无需 AI 的工具，把任何公开仓库变成依赖地图，并告诉你**该从哪里开始读**。
 
+**[▶ 立即在线体验 codemap.sora16bit.com](https://codemap.sora16bit.com)**
+
+[![Live demo](https://img.shields.io/badge/demo-codemap.sora16bit.com-2563eb.svg)](https://codemap.sora16bit.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-black.svg)](../LICENSE)
 [![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-black.svg)](#贡献)
@@ -59,7 +62,9 @@
 
 ## 快速开始
 
-需要 Node.js 20+。
+最快的方式是**[在线体验](https://codemap.sora16bit.com)**（无需安装）。粘贴仓库（`owner/repo` 或完整的 `github.com/...` 链接）并点击 **分析**。可用 `sindresorhus/ky` 或 `cli/cli` 在真实代码库上试试。
+
+在本地运行（需要 Node.js 20+）：
 
 ```bash
 git clone https://github.com/sora16bit/codemap.git
@@ -68,7 +73,7 @@ npm install
 npm run dev
 ```
 
-打开 <http://localhost:3000>，粘贴仓库（`owner/repo` 或完整的 `github.com/...` 链接），点击 **分析**。可用 `sindresorhus/ky` 或 `cli/cli` 在真实代码库上试试。
+然后打开 <http://localhost:3000>。
 
 ## 工作原理
 

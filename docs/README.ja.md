@@ -6,6 +6,9 @@
 
 公開リポジトリを依存マップに変え、**どこから読み始めればいいか**まで教える、AI不要・無料のツール。
 
+**[▶ codemap.sora16bit.com で今すぐ試す](https://codemap.sora16bit.com)**
+
+[![Live demo](https://img.shields.io/badge/demo-codemap.sora16bit.com-2563eb.svg)](https://codemap.sora16bit.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-black.svg)](../LICENSE)
 [![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-black.svg)](#コントリビュート)
@@ -59,7 +62,9 @@ UI は**8言語**対応（English, 日本語, 简体中文, Español, Français,
 
 ## クイックスタート
 
-Node.js 20 以上が必要。
+一番速いのは**[ライブデモ](https://codemap.sora16bit.com)**（インストール不要）。リポジトリ（`owner/repo` か `github.com/...` のフルURL）を貼って **解析** を押すだけ。`sindresorhus/ky` や `cli/cli` で実際のコードベースで試せる。
+
+ローカルで動かすなら（Node.js 20 以上）：
 
 ```bash
 git clone https://github.com/sora16bit/codemap.git
@@ -68,7 +73,7 @@ npm install
 npm run dev
 ```
 
-<http://localhost:3000> を開き、リポジトリ（`owner/repo` か `github.com/...` のフルURL）を貼って **解析** を押す。`sindresorhus/ky` や `cli/cli` で実際のコードベースで試せる。
+あとは <http://localhost:3000> を開く。
 
 ## 仕組み
 

@@ -6,6 +6,9 @@
 
 Ein kostenloses Tool ohne KI, das jedes öffentliche Repository in eine Abhängigkeitskarte verwandelt — und dir sagt, **wo du mit dem Lesen anfangen sollst**.
 
+**[▶ Jetzt live testen auf codemap.sora16bit.com](https://codemap.sora16bit.com)**
+
+[![Live demo](https://img.shields.io/badge/demo-codemap.sora16bit.com-2563eb.svg)](https://codemap.sora16bit.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-black.svg)](../LICENSE)
 [![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-black.svg)](#mitwirken)
@@ -59,7 +62,9 @@ Die Oberfläche gibt es in **8 Sprachen** (English, 日本語, 简体中文, Esp
 
 ## Schnellstart
 
-Benötigt Node.js 20+.
+Am schnellsten geht es mit der **[Live-Demo](https://codemap.sora16bit.com)** (keine Installation). Repo (`owner/repo` oder eine vollständige `github.com/...`-URL) einfügen und **Analysieren** klicken. Probiere `sindresorhus/ky` oder `cli/cli`, um es an echtem Code zu sehen.
+
+Lokal ausführen (Node.js 20+):
 
 ```bash
 git clone https://github.com/sora16bit/codemap.git
@@ -68,7 +73,7 @@ npm install
 npm run dev
 ```
 
-Öffne <http://localhost:3000>, füge ein Repo ein (`owner/repo` oder eine vollständige `github.com/...`-URL) und klicke auf **Analysieren**. Probiere `sindresorhus/ky` oder `cli/cli`, um es an echtem Code zu sehen.
+Dann öffne <http://localhost:3000>.
 
 ## Wie es funktioniert
 

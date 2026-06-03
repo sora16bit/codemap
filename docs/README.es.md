@@ -6,6 +6,9 @@
 
 Una herramienta gratuita y sin IA que convierte cualquier repositorio público en un mapa de dependencias — y te dice **por dónde empezar a leer**.
 
+**[▶ Pruébalo en vivo en codemap.sora16bit.com](https://codemap.sora16bit.com)**
+
+[![Live demo](https://img.shields.io/badge/demo-codemap.sora16bit.com-2563eb.svg)](https://codemap.sora16bit.com)
 [![License: MIT](https://img.shields.io/badge/License-MIT-black.svg)](../LICENSE)
 [![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)](https://nextjs.org)
 [![PRs welcome](https://img.shields.io/badge/PRs-welcome-black.svg)](#contribuir)
@@ -59,7 +62,9 @@ La interfaz está disponible en **8 idiomas** (English, 日本語, 简体中文,
 
 ## Inicio rápido
 
-Requiere Node.js 20+.
+La forma más rápida es la **[demo en vivo](https://codemap.sora16bit.com)** (sin instalar). Pega un repo (`owner/repo` o una URL completa `github.com/...`) y pulsa **Analizar**. Prueba `sindresorhus/ky` o `cli/cli` para verlo en una base de código real.
+
+Para ejecutarlo localmente (Node.js 20+):
 
 ```bash
 git clone https://github.com/sora16bit/codemap.git
@@ -68,7 +73,7 @@ npm install
 npm run dev
 ```
 
-Abre <http://localhost:3000>, pega un repo (`owner/repo` o una URL completa `github.com/...`) y pulsa **Analizar**. Prueba `sindresorhus/ky` o `cli/cli` para verlo en una base de código real.
+Luego abre <http://localhost:3000>.
 
 ## Cómo funciona
 
