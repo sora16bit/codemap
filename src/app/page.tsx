@@ -26,6 +26,8 @@ export default function Home() {
   const [codeOpen, setCodeOpen] = useState(false);
   // 開発時のみ：解析したい手元プロジェクトのパス（ホーム配下・空ならこのプロジェクト自身）。
   const [localDir, setLocalDir] = useState("");
+  // 共有リンクをコピーしたあとの一時フィードバック（「リンクをコピーしました」）。
+  const [copied, setCopied] = useState(false);
 
   async function analyze(e: React.FormEvent) {
     e.preventDefault();
@@ -71,6 +73,22 @@ export default function Home() {
       setError(err instanceof Error ? err.message : "予期しないエラー");
     } finally {
       setLoading(false);
+    }
+  }
+
+  // 共有：このリポの OG カード画像 URL をクリップボードへ。SNS にそのまま貼れる＝バイラルの種。
+  // ローカル解析(local:)は GitHub から取得できないので、共有ボタンは GitHub リポのときだけ出す。
+  const canShare = !!graph && !graph.repo.startsWith("local:");
+  async function share() {
+    if (!graph) return;
+    const ogUrl = `${window.location.origin}/api/og?repo=${encodeURIComponent(graph.repo)}`;
+    try {
+      await navigator.clipboard.writeText(ogUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // クリップボード不可の環境では新規タブで画像を開くだけにフォールバック。
+      window.open(ogUrl, "_blank");
     }
   }
 
@@ -203,6 +221,14 @@ export default function Home() {
             {graph.edges.length === 0 && graph.fileCount > 0 && (
               // 依存0は故障ではない。理由を添えないと「壊れてる?」と誤解される。
               <p className="mt-1 text-xs text-zinc-400">{t(lang, "deps.zeroReason")}</p>
+            )}
+            {canShare && (
+              <button
+                onClick={share}
+                className="mt-2 rounded-md border border-zinc-200 px-3 py-1.5 text-xs text-zinc-700 transition-colors hover:border-zinc-300 hover:text-zinc-900 dark:border-zinc-800 dark:text-zinc-300 dark:hover:text-zinc-100"
+              >
+                {copied ? t(lang, "share.copied") : t(lang, "btn.share")}
+              </button>
             )}
             {selectedNode ? (
               <div className="mt-3 space-y-3">
